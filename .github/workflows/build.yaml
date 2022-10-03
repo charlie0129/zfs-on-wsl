@@ -113,7 +113,8 @@ jobs:
       - name: Build ZFS
         run: |
           cd /usr/src/zfs-${ZFSVER}-for-linux-${KERNELVER}-${KERNELNAME}
-          make -s -j$(nproc)
+          make -j$(nproc)
+          sudo make install
 
       - name: Build Kernel
         run: |
@@ -125,3 +126,31 @@ jobs:
 
           # Build our kernel and install the modules into /lib/modules!
           make -j$(nproc)
+
+      - name: Upload bzImage
+        uses: actions/upload-artifact@v3
+        with:
+          name: bzImage-${{ env.KERNELVER }}-${{ env.KERNELNAME }}
+          path: /usr/src/linux-${{ env.KERNELVER }}-${{ env.KERNELNAME }}/arch/x86/boot/bzImage
+
+      - name: Archive Kernel
+        run: |
+          cd /usr/src
+          tar cf linux-${KERNELVER}-${KERNELNAME}.tar linux-${KERNELVER}-${KERNELNAME}
+
+      - name: Upload Kernel Tarball
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-${{ env.KERNELVER }}-${{ env.KERNELNAME }}.tar
+          path: /usr/src/linux-${{ env.KERNELVER }}-${{ env.KERNELNAME }}.tar
+
+      - name: Archive ZFS
+        run: |
+          cd /usr/src
+          tar cf zfs-${ZFSVER}-for-${KERNELVER}-${KERNELNAME}.tar zfs-${ZFSVER}-for-linux-${KERNELVER}-${KERNELNAME}
+
+      - name: Upload ZFS Tarball
+        uses: actions/upload-artifact@v3
+        with:
+          name: zfs-${{ env.ZFSVER }}-for-${{ env.KERNELVER }}-${{ env.KERNELNAME }}.tar
+          path: /usr/src/zfs-${{ env.ZFSVER }}-for-${{ env.KERNELVER }}-${{ env.KERNELNAME }}.tar
