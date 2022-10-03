@@ -1,4 +1,4 @@
-name: Build Latest Kernel with ZFS Support
+name: Build ZFS and Latest Kernel with ZFS Support
 
 on:
   workflow_dispatch: {}
@@ -8,6 +8,7 @@ env:
 
 jobs:
   build:
+    name: Build Kernel and ZFS
     runs-on: ubuntu-latest
     steps:
       - name: Get the Latest Kernel Version
@@ -25,8 +26,6 @@ jobs:
       - name: Install Build Dependencies
         run: |
           export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get update
-          sudo apt-get upgrade -y
           sudo apt-get install -y tzdata
           sudo apt-get install -y \
             alien \
@@ -57,35 +56,34 @@ jobs:
             wget \
             zlib1g-dev
 
-      - name: Create temp Build Directory
+      - name: Create Build Directory
         run: |
-          if [[ -d "/tmp/kbuild" ]]; then rm -rf /tmp/kbuild; fi
-          mkdir /tmp/kbuild
+          mkdir -p $HOME/src
       
       - name: Download and Extract Kernel Source
         run: |
-          wget https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${KERNELVER}.tar.xz -O /tmp/kbuild/kernel.tar.xz
-          tar -xf /tmp/kbuild/kernel.tar.xz -C /tmp/kbuild
+          wget -q https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${KERNELVER}.tar.xz -O $HOME/src/kernel.tar.xz
+          tar -xf $HOME/src/kernel.tar.xz -C $HOME/src
           # Move our kernel directory to reflect our custom name
-          mv -fv /tmp/kbuild/linux-${KERNELVER} /usr/src/linux-${KERNELVER}-${KERNELNAME}
+          mv -fv $HOME/src/linux-${KERNELVER} $HOME/src/linux-${KERNELVER}-${KERNELNAME}
 
       - name: Download and Extract ZFS Source
         run: |
-          wget https://github.com/openzfs/zfs/releases/download/zfs-${ZFSVER}/zfs-${ZFSVER}.tar.gz -O /tmp/kbuild/zfs.tar.gz
-          tar -xf /tmp/kbuild/zfs.tar.gz -C /tmp/kbuild
+          wget -q https://github.com/openzfs/zfs/releases/download/zfs-${ZFSVER}/zfs-${ZFSVER}.tar.gz -O $HOME/src/zfs.tar.gz
+          tar -xf $HOME/src/zfs.tar.gz -C $HOME/src
           # Move our ZFS directory to reflect our custom name
-          mv -fv /tmp/kbuild/zfs-${ZFSVER} /usr/src/zfs-${ZFSVER}-for-linux-${KERNELVER}-${KERNELNAME}
+          mv -fv $HOME/src/zfs-${ZFSVER} $HOME/src/zfs-${ZFSVER}-for-linux-${KERNELVER}-${KERNELNAME}
 
       - name: Configure Kernel
         run: |
           # Add the WSL2 kernel config from upstream into our extracted kernel directory
-          wget https://raw.githubusercontent.com/microsoft/WSL2-Linux-Kernel/master/Microsoft/config-wsl -O /usr/src/linux-${KERNELVER}-${KERNELNAME}/.config
+          wget https://raw.githubusercontent.com/microsoft/WSL2-Linux-Kernel/master/Microsoft/config-wsl -O $HOME/src/linux-${KERNELVER}-${KERNELNAME}/.config
 
           # Use our custom localversion so we can tell when we've actually successfully installed one of our custom kernels
-          sed -i 's/^CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-${KERNELNAME}"/g' /usr/src/linux-${KERNELVER}-${KERNELNAME}/.config
+          sed -i 's/^CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-${KERNELNAME}"/g' $HOME/src/linux-${KERNELVER}-${KERNELNAME}/.config
 
           # Enter the kernel directory
-          cd /usr/src/linux-${KERNELVER}-${KERNELNAME}
+          cd $HOME/src/linux-${KERNELVER}-${KERNELNAME}
 
           # Update our .config file by accepting the defaults for any new kernel
           # config options added to the kernel since the Microsoft config was
@@ -98,31 +96,31 @@ jobs:
       - name: Configure ZFS
         run: |
           # Enter the ZFS module directory
-          cd /usr/src/zfs-${ZFSVER}-for-linux-${KERNELVER}-${KERNELNAME}
+          cd $HOME/src/zfs-${ZFSVER}-for-linux-${KERNELVER}-${KERNELNAME}
 
           # Run OpenZFS autogen.sh script
           ./autogen.sh
 
           # Configure the OpenZFS modules
           # See: https://openzfs.github.io/openzfs-docs/Developer%20Resources/opt/kbuilding%20ZFS.html
-          ./configure --prefix=/ --libdir=/lib --includedir=/usr/include --datarootdir=/usr/share --enable-linux-builtin=yes --with-linux=/usr/src/linux-${KERNELVER}-${KERNELNAME} --with-linux-obj=/usr/src/linux-${KERNELVER}-${KERNELNAME}
+          ./configure --prefix=/ --libdir=/lib --includedir=/usr/include --datarootdir=/usr/share --enable-linux-builtin=yes --with-linux=$HOME/src/linux-${KERNELVER}-${KERNELNAME} --with-linux-obj=$HOME/src/linux-${KERNELVER}-${KERNELNAME}
 
           # Run the copy-builtin script
-          ./copy-builtin /usr/src/linux-${KERNELVER}-${KERNELNAME}
+          ./copy-builtin $HOME/src/linux-${KERNELVER}-${KERNELNAME}
 
       - name: Build ZFS
         run: |
-          cd /usr/src/zfs-${ZFSVER}-for-linux-${KERNELVER}-${KERNELNAME}
+          cd $HOME/src/zfs-${ZFSVER}-for-linux-${KERNELVER}-${KERNELNAME}
           make -j$(nproc)
           sudo make install
 
       - name: Build Kernel
         run: |
-          cd /usr/src/linux-${KERNELVER}-${KERNELNAME}
+          cd $HOME/src/linux-${KERNELVER}-${KERNELNAME}
 
           # Make sure that we're going to build ZFS support when we build our kernel
-          sed -i '/.*CONFIG_ZFS.*/d' /usr/src/linux-${KERNELVER}-${KERNELNAME}/.config
-          echo "CONFIG_ZFS=y" >> /usr/src/linux-${KERNELVER}-${KERNELNAME}/.config
+          sed -i '/.*CONFIG_ZFS.*/d' $HOME/src/linux-${KERNELVER}-${KERNELNAME}/.config
+          echo "CONFIG_ZFS=y" >> $HOME/src/linux-${KERNELVER}-${KERNELNAME}/.config
 
           # Build our kernel and install the modules into /lib/modules!
           make -j$(nproc)
@@ -131,26 +129,26 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: bzImage-${{ env.KERNELVER }}-${{ env.KERNELNAME }}
-          path: /usr/src/linux-${{ env.KERNELVER }}-${{ env.KERNELNAME }}/arch/x86/boot/bzImage
+          path: /home/runner/src/linux-${{ env.KERNELVER }}-${{ env.KERNELNAME }}/arch/x86/boot/bzImage
 
       - name: Archive Kernel
         run: |
-          cd /usr/src
+          cd $HOME/src
           tar cf linux-${KERNELVER}-${KERNELNAME}.tar linux-${KERNELVER}-${KERNELNAME}
 
       - name: Upload Kernel Tarball
         uses: actions/upload-artifact@v3
         with:
           name: linux-${{ env.KERNELVER }}-${{ env.KERNELNAME }}.tar
-          path: /usr/src/linux-${{ env.KERNELVER }}-${{ env.KERNELNAME }}.tar
+          path: /home/runner/src/linux-${{ env.KERNELVER }}-${{ env.KERNELNAME }}.tar
 
       - name: Archive ZFS
         run: |
-          cd /usr/src
+          cd $HOME/src
           tar cf zfs-${ZFSVER}-for-${KERNELVER}-${KERNELNAME}.tar zfs-${ZFSVER}-for-linux-${KERNELVER}-${KERNELNAME}
 
       - name: Upload ZFS Tarball
         uses: actions/upload-artifact@v3
         with:
           name: zfs-${{ env.ZFSVER }}-for-${{ env.KERNELVER }}-${{ env.KERNELNAME }}.tar
-          path: /usr/src/zfs-${{ env.ZFSVER }}-for-${{ env.KERNELVER }}-${{ env.KERNELNAME }}.tar
+          path: /home/runner/src/zfs-${{ env.ZFSVER }}-for-${{ env.KERNELVER }}-${{ env.KERNELNAME }}.tar
