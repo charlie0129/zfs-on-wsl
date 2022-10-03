@@ -11,10 +11,12 @@ jobs:
     name: Build Kernel and ZFS
     runs-on: ubuntu-latest
     steps:
-      - name: Get the Latest Kernel Version
+      - name: Get the Latest WSL2 Kernel Version
         run: |
-          VER=$(curl -s https://www.kernel.org/ | grep -A1 'stable:' | grep -oP '(?<=strong>).*(?=</strong.*)')
-          echo "Latest Kernel: $VER"
+          VERSTR=$(curl -s https://api.github.com/repos/microsoft/WSL2-Linux-Kernel/releases/latest | jq '.tag_name' --raw-output)
+          VER=$(echo "$VERSTR" | grep -oP '\d+\.\d+\.\d+.*\d*')
+          echo "Latest Kernel: $VERSTR, version $VER"
+          echo "KERNELVERSTR=$VERSTR" >> $GITHUB_ENV
           echo "KERNELVER=$VER" >> $GITHUB_ENV
 
       - name: Get the Latest ZFS Version
@@ -62,33 +64,27 @@ jobs:
       
       - name: Download and Extract Kernel Source
         run: |
-          wget -q https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${KERNELVER}.tar.xz -O $HOME/src/kernel.tar.xz
-          tar -xf $HOME/src/kernel.tar.xz -C $HOME/src
+          wget -q $(curl -s https://api.github.com/repos/microsoft/WSL2-Linux-Kernel/releases/latest | jq '.tarball_url' --raw-output) -O $HOME/src/kernel.tar.gz
+          tar -xf $HOME/src/kernel.tar.gz -C $HOME/src
           # Move our kernel directory to reflect our custom name
           mv -fv $HOME/src/linux-${KERNELVER} $HOME/src/linux-${KERNELVER}-${KERNELNAME}
 
       - name: Download and Extract ZFS Source
         run: |
-          wget -q https://github.com/openzfs/zfs/releases/download/zfs-${ZFSVER}/zfs-${ZFSVER}.tar.gz -O $HOME/src/zfs.tar.gz
+          wget -q $(curl -s https://api.github.com/repos/openzfs/zfs/releases/latest | jq '.tarball_url' --raw-output) -O $HOME/src/zfs.tar.gz
           tar -xf $HOME/src/zfs.tar.gz -C $HOME/src
           # Move our ZFS directory to reflect our custom name
           mv -fv $HOME/src/zfs-${ZFSVER} $HOME/src/zfs-${ZFSVER}-for-linux-${KERNELVER}-${KERNELNAME}
 
       - name: Configure Kernel
         run: |
-          # Add the WSL2 kernel config from upstream into our extracted kernel directory
-          wget https://raw.githubusercontent.com/microsoft/WSL2-Linux-Kernel/master/Microsoft/config-wsl -O $HOME/src/linux-${KERNELVER}-${KERNELNAME}/.config
-
-          # Use our custom localversion so we can tell when we've actually successfully installed one of our custom kernels
-          sed -i 's/^CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-${KERNELNAME}"/g' $HOME/src/linux-${KERNELVER}-${KERNELNAME}/.config
-
           # Enter the kernel directory
           cd $HOME/src/linux-${KERNELVER}-${KERNELNAME}
 
-          # Update our .config file by accepting the defaults for any new kernel
-          # config options added to the kernel since the Microsoft config was
-          # generated.
-          make olddefconfig
+          cp -f Microsoft/config-wsl .config
+
+          # Use our custom localversion so we can tell when we've actually successfully installed one of our custom kernels
+          sed -i 's/^CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-${KERNELNAME}"/g' .config
 
           # Check and resolve any dependencies needed before building the kernel
           make prepare
