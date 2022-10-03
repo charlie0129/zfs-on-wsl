@@ -25,6 +25,26 @@ jobs:
           echo "Latest ZFS: $VER"
           echo "ZFSVER=$VER" >> $GITHUB_ENV
 
+      - name: Create Build Directory
+        run: |
+          mkdir -p $HOME/src
+      
+      - name: Download and Extract Kernel Source
+        run: |
+          wget -q $(curl -s https://api.github.com/repos/microsoft/WSL2-Linux-Kernel/releases/latest | jq '.tarball_url' --raw-output) -O $HOME/src/kernel.tar.gz
+          tar -xf $HOME/src/kernel.tar.gz -C $HOME/src
+          rm -f $HOME/src/kernel.tar.gz
+          # Move our kernel directory to reflect our custom name
+          mv -fv $HOME/src/microsoft-WSL2-Linux-Kernel-* $HOME/src/linux-${KERNELVER}-${KERNELNAME}
+
+      - name: Download and Extract ZFS Source
+        run: |
+          wget -q $(curl -s https://api.github.com/repos/openzfs/zfs/releases/latest | jq '.tarball_url' --raw-output) -O $HOME/src/zfs.tar.gz
+          tar -xf $HOME/src/zfs.tar.gz -C $HOME/src
+          rm -f $HOME/src/zfs.tar.gz
+          # Move our ZFS directory to reflect our custom name
+          mv -fv $HOME/src/openzfs-zfs-* $HOME/src/zfs-${ZFSVER}-for-linux-${KERNELVER}-${KERNELNAME}
+
       - name: Install Build Dependencies
         run: |
           export DEBIAN_FRONTEND=noninteractive
@@ -56,25 +76,8 @@ jobs:
             python3-setuptools \
             uuid-dev \
             wget \
-            zlib1g-dev
-
-      - name: Create Build Directory
-        run: |
-          mkdir -p $HOME/src
-      
-      - name: Download and Extract Kernel Source
-        run: |
-          wget -q $(curl -s https://api.github.com/repos/microsoft/WSL2-Linux-Kernel/releases/latest | jq '.tarball_url' --raw-output) -O $HOME/src/kernel.tar.gz
-          tar -xf $HOME/src/kernel.tar.gz -C $HOME/src
-          # Move our kernel directory to reflect our custom name
-          mv -fv $HOME/src/linux-${KERNELVER} $HOME/src/linux-${KERNELVER}-${KERNELNAME}
-
-      - name: Download and Extract ZFS Source
-        run: |
-          wget -q $(curl -s https://api.github.com/repos/openzfs/zfs/releases/latest | jq '.tarball_url' --raw-output) -O $HOME/src/zfs.tar.gz
-          tar -xf $HOME/src/zfs.tar.gz -C $HOME/src
-          # Move our ZFS directory to reflect our custom name
-          mv -fv $HOME/src/zfs-${ZFSVER} $HOME/src/zfs-${ZFSVER}-for-linux-${KERNELVER}-${KERNELNAME}
+            zlib1g-dev \
+            dwarves
 
       - name: Configure Kernel
         run: |
